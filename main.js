@@ -29,10 +29,38 @@ function unzip(zip, dir) {
       .on('close', code => (code === 0 ? resolve() : reject(new Error('yt-dlp 압축 해제 실패')))));
 }
 
+// 새 폴더에 다 푼 뒤 교체한다. 도중에 실패해도 기존 버전은 그대로 남는다
+async function install(zip, version) {
+  const tmpDir = ytdlpDir + '.new';
+  try {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    fs.mkdirSync(tmpDir, { recursive: true });
+    await unzip(zip, tmpDir);
+    fs.rmSync(ytdlpDir, { recursive: true, force: true });
+    fs.renameSync(tmpDir, ytdlpDir);
+    fs.writeFileSync(versionFile, version || '');
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+}
+
+const installedVersion = () => (fs.existsSync(ytdlpPath) && fs.existsSync(versionFile)
+  ? fs.readFileSync(versionFile, 'utf8') : null);
+
 // 설치돼 있지 않거나 새 버전이 나왔으면 받는다 (YouTube 변경에 대응하려면 최신 유지가 중요)
 async function ensureYtdlp() {
-  const installed = fs.existsSync(ytdlpPath) && fs.existsSync(versionFile)
-    ? fs.readFileSync(versionFile, 'utf8') : null;
+  fs.mkdirSync(binDir, { recursive: true });
+  fs.rmSync(path.join(binDir, isWin ? 'yt-dlp.exe' : 'yt-dlp'), { force: true }); // 예전 단일 exe 정리
+
+  // 설치 파일에 함께 넣어 둔 버전이 있으면 먼저 그것을 설치한다 (첫 실행 때 인터넷 없이도 바로 사용)
+  const bundled = path.join(process.resourcesPath, 'yt-dlp');
+  if (installedVersion() == null && fs.existsSync(path.join(bundled, 'yt-dlp.zip'))) {
+    try {
+      await install(path.join(bundled, 'yt-dlp.zip'), fs.readFileSync(path.join(bundled, 'version.txt'), 'utf8'));
+    } catch {}
+  }
+
+  const installed = installedVersion();
   let latest;
   try {
     const res = await fetch(`${releases}/latest`, { redirect: 'manual' });
@@ -40,17 +68,17 @@ async function ensureYtdlp() {
   } catch {}
   if (installed != null && (!latest || installed === latest)) return;
 
-  fs.mkdirSync(binDir, { recursive: true });
-  fs.rmSync(path.join(binDir, isWin ? 'yt-dlp.exe' : 'yt-dlp'), { force: true }); // 예전 단일 exe 정리
-  const res = await fetch(zipUrl);
-  if (!res.ok) throw new Error(`yt-dlp 다운로드 실패: ${res.status}`);
   const zip = path.join(binDir, 'yt-dlp.zip');
-  fs.writeFileSync(zip, Buffer.from(await res.arrayBuffer()));
-  fs.rmSync(ytdlpDir, { recursive: true, force: true });
-  fs.mkdirSync(ytdlpDir);
-  await unzip(zip, ytdlpDir);
-  fs.rmSync(zip);
-  fs.writeFileSync(versionFile, latest || '');
+  try {
+    const res = await fetch(zipUrl);
+    if (!res.ok) throw new Error(`yt-dlp 다운로드 실패: ${res.status}`);
+    fs.writeFileSync(zip, Buffer.from(await res.arrayBuffer()));
+    await install(zip, latest);
+  } catch (e) {
+    if (installed == null) throw e; // 업데이트만 실패한 거면 기존 버전으로 계속 쓴다
+  } finally {
+    fs.rmSync(zip, { force: true });
+  }
 }
 
 function run(args, onLine, onSpawn) {
@@ -133,12 +161,14 @@ ipcMain.handle('download', async (_e, { id, url, quality, folder, compat, subs }
   }
 });
 
-ipcMain.handle('cancel', (_e, id) => {
-  const p = jobs.get(id);
-  if (!p) return;
+function kill(p) {
   // Windows의 yt-dlp.exe는 자식 프로세스를 띄우므로 트리째 종료해야 실제로 멈춘다
   if (isWin) spawn('taskkill', ['/pid', String(p.pid), '/T', '/F']);
   else p.kill();
+}
+ipcMain.handle('cancel', (_e, id) => {
+  const p = jobs.get(id);
+  if (p) kill(p);
 });
 ipcMain.handle('open-folder', (_e, folder) => shell.openPath(folder));
 ipcMain.handle('open-file', (_e, file) => (fs.existsSync(file) ? shell.openPath(file) : '파일을 찾을 수 없습니다'));
@@ -174,6 +204,9 @@ app.whenReady().then(async () => {
     webPreferences: { preload: path.join(__dirname, 'preload.js'), webviewTag: true },
   });
   win.setMenuBarVisibility(false);
+  // 메인 창은 로컬 UI만 띄운다. 링크·파일을 끌어다 놓아 외부 페이지로 이동하면 preload API가 노출되므로 막는다
+  win.webContents.on('will-navigate', e => e.preventDefault());
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.loadFile('index.html');
   try {
     // 페이지 로드 전에 보내면 렌더러가 'ready'를 놓친다
@@ -186,3 +219,5 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => app.quit());
+// 앱을 닫으면 진행 중인 다운로드도 끝낸다 (안 그러면 yt-dlp가 뒤에서 계속 돈다)
+app.on('before-quit', () => jobs.forEach(kill));

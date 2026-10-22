@@ -12,9 +12,9 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            target: --win
+            target: win
           - os: macos-latest   # Apple Silicon (arm64)
-            target: --mac
+            target: mac
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -24,7 +24,8 @@ jobs:
           cache: npm
       # ffmpeg-static은 설치하는 OS용 바이너리를 받으므로 각 OS에서 따로 설치·빌드해야 한다
       - run: npm ci
-      - run: npx electron-builder ${{ matrix.target }} --publish never
+      # yt-dlp를 미리 받아 함께 넣은 뒤 빌드한다 (scripts/fetch-ytdlp.js)
+      - run: npm run dist:${{ matrix.target }} -- --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false   # 인증서 없이 빌드 (서명 안 함)
       - uses: actions/upload-artifact@v4
