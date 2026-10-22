@@ -114,7 +114,7 @@ function showDone(el, entry) {
     if (err) toast(err);
   };
   const state = el.querySelector('.state');
-  state.textContent = entry.warning ? `완료 (${entry.warning}) · ` : '완료 · ';
+  state.textContent = entry.skipped ? '이미 있는 파일 · ' : entry.warning ? `완료 (${entry.warning}) · ` : '완료 · ';
   const b = document.createElement('button');
   b.textContent = '폴더에서 보기';
   b.onclick = async () => {
@@ -122,6 +122,13 @@ function showDone(el, entry) {
     if (err) toast(err);
   };
   state.append(b);
+  // 같은 이름 파일이 있어 건너뛴 경우: 덮어쓰고 다시 받기 (화질을 바꿔 받을 때도 사용)
+  if (entry.skipped && entry.job) {
+    const again = document.createElement('button');
+    again.textContent = '새로 받기';
+    again.onclick = () => { removeCard(el); start({ ...entry.job, overwrite: true, title: entry.title, thumb: entry.thumb }); };
+    state.append(' · ', again);
+  }
   const x = el.querySelector('.x');
   x.title = '목록에서 지우기';
   x.onclick = () => removeCard(el);
@@ -192,13 +199,13 @@ async function run(item) {
   el.querySelector('.state').textContent = '시작 중';
   const titleOf = () => el.querySelector('.title').textContent;
   try {
-    const r = await api.download({ id, url: job.url, quality: job.quality, folder: job.folder, compat: job.compat, subs: job.subs });
+    const r = await api.download({ id, url: job.url, quality: job.quality, folder: job.folder, compat: job.compat, subs: job.subs, overwrite: job.overwrite });
     const entry = { key: `h${Date.now()}_${id}`, title: titleOf(), thumb: el.dataset.thumb, file: r.file,
-      folder: job.folder, label: job.label, warning: r.warning };
+      folder: job.folder, label: job.label, warning: r.warning, skipped: r.skipped, job };
     history.unshift(entry);
     saveHistory();
     showDone(el, entry);
-    if (opts.notify.checked) new Notification('다운로드 완료', { body: entry.title });
+    if (opts.notify.checked) new Notification(r.skipped ? '이미 있는 파일' : '다운로드 완료', { body: entry.title });
     if (opts.autoClose.checked) setTimeout(() => removeCard(el), 3000);
   } catch (e) {
     el.className = 'job fail';

@@ -170,7 +170,7 @@ const STAGES = [
   [/^\[ExtractAudio\]/, 'MP3 변환 중'],
 ];
 
-ipcMain.handle('download', async (_e, { id, url, quality, folder, compat, subs }) => {
+ipcMain.handle('download', async (_e, { id, url, quality, folder, compat, subs, overwrite }) => {
   const args = ['--no-playlist', '--newline', '--ffmpeg-location', ffmpegPath,
     // 제목·썸네일·최종 파일 경로를 출력한다. --print는 quiet를 켜므로 --no-quiet로 진행 로그를 다시 켠다
     '--no-simulate', '--no-quiet',
@@ -188,12 +188,15 @@ ipcMain.handle('download', async (_e, { id, url, quality, folder, compat, subs }
     args.push('-f', f, '--merge-output-format', 'mp4');
     if (subs) args.push('--write-subs', '--write-auto-subs', '--sub-langs', 'ko,en', '--convert-subs', 'srt');
   }
+  if (overwrite) args.push('--force-overwrites'); // '새로 받기': 같은 이름 파일이 있어도 다시 받는다
   args.push(url);
   let file = null;
+  let skipped = false; // 같은 이름 파일이 이미 있어 yt-dlp가 건너뛴 경우
   try {
     await run(args, line => {
       const t = line.match(/^\[(title|thumb|file)\] (.*)/);
       if (t && t[1] === 'file') file = t[2];
+      if (/has already been downloaded/.test(line)) skipped = true;
       else if (t) win.webContents.send('job', { id, [t[1]]: t[2] });
       const m = line.match(/\[download\]\s+([\d.]+)% of .*? at\s+(\S+)\s+ETA\s+(\S+)/) ||
         line.match(/\[download\]\s+([\d.]+)%/);
@@ -201,7 +204,7 @@ ipcMain.handle('download', async (_e, { id, url, quality, folder, compat, subs }
       const s = STAGES.find(([re]) => re.test(line));
       if (s) win.webContents.send('job', { id, stage: s[1] });
     }, p => jobs.set(id, p));
-    return { file };
+    return { file, skipped };
   } catch (e) {
     // 자막 요청이 YouTube에 막혀도(429) 영상 파일이 만들어졌으면 성공으로 본다
     if (file && fs.existsSync(file)) return { file, warning: '자막 일부 실패' };
