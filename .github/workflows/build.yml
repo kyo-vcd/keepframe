@@ -13,7 +13,7 @@ jobs:
         include:
           - os: windows-latest
             target: win
-          - os: macos-latest   # Apple Silicon (arm64)
+          - os: macos-14   # Apple Silicon (arm64). macos-latest는 서버 부족으로 배정이 안 될 때가 많다
             target: mac
     runs-on: ${{ matrix.os }}
     steps:
