@@ -29,55 +29,92 @@ function unzip(zip, dir) {
       .on('close', code => (code === 0 ? resolve() : reject(new Error('yt-dlp 압축 해제 실패')))));
 }
 
-// 새 폴더에 다 푼 뒤 교체한다. 도중에 실패해도 기존 버전은 그대로 남는다
-async function install(zip, version) {
-  const tmpDir = ytdlpDir + '.new';
+// 새 버전은 tmpDir에 먼저 풀어 두고, swap()으로 교체한다
+const tmpDir = ytdlpDir + '.new';
+
+async function extract(zip) {
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+  fs.mkdirSync(tmpDir, { recursive: true });
+  await unzip(zip, tmpDir);
+}
+
+// 기존 폴더를 옆으로 치워 둔 뒤 교체한다. 도중에 실패하면 원래대로 되돌린다
+function swap(version) {
+  const oldDir = ytdlpDir + '.old';
+  fs.rmSync(oldDir, { recursive: true, force: true });
+  if (fs.existsSync(ytdlpDir)) fs.renameSync(ytdlpDir, oldDir);
   try {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-    fs.mkdirSync(tmpDir, { recursive: true });
-    await unzip(zip, tmpDir);
-    fs.rmSync(ytdlpDir, { recursive: true, force: true });
     fs.renameSync(tmpDir, ytdlpDir);
-    fs.writeFileSync(versionFile, version || '');
+  } catch (e) {
+    if (fs.existsSync(oldDir)) fs.renameSync(oldDir, ytdlpDir);
+    throw e;
+  }
+  fs.writeFileSync(versionFile, version || '');
+  fs.rmSync(oldDir, { recursive: true, force: true });
+}
+
+async function latestVersion() {
+  try {
+    const res = await fetch(`${releases}/latest`, { redirect: 'manual' });
+    return res.headers.get('location')?.split('/').pop() || null;
+  } catch { return null; }
+}
+
+async function downloadLatest() {
+  const zip = path.join(binDir, 'yt-dlp.zip');
+  try {
+    const res = await fetch(zipUrl);
+    if (!res.ok) throw new Error(`yt-dlp 다운로드 실패: ${res.status}`);
+    fs.writeFileSync(zip, Buffer.from(await res.arrayBuffer()));
+    await extract(zip);
   } finally {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    fs.rmSync(zip, { force: true });
   }
 }
 
 const installedVersion = () => (fs.existsSync(ytdlpPath) && fs.existsSync(versionFile)
   ? fs.readFileSync(versionFile, 'utf8') : null);
 
-// 설치돼 있지 않거나 새 버전이 나왔으면 받는다 (YouTube 변경에 대응하려면 최신 유지가 중요)
+// 쓸 수 있는 yt-dlp를 확보한다. 이미 있으면 바로 끝나고, 업데이트는 updateYtdlp()가 뒤에서 한다
 async function ensureYtdlp() {
   fs.mkdirSync(binDir, { recursive: true });
   fs.rmSync(path.join(binDir, isWin ? 'yt-dlp.exe' : 'yt-dlp'), { force: true }); // 예전 단일 exe 정리
+  if (installedVersion() != null) return;
 
-  // 설치 파일에 함께 넣어 둔 버전이 있으면 먼저 그것을 설치한다 (첫 실행 때 인터넷 없이도 바로 사용)
+  // 설치 파일에 함께 넣어 둔 버전을 설치한다 (첫 실행 때 인터넷 없이도 바로 사용)
   const bundled = path.join(process.resourcesPath, 'yt-dlp');
-  if (installedVersion() == null && fs.existsSync(path.join(bundled, 'yt-dlp.zip'))) {
-    try {
-      await install(path.join(bundled, 'yt-dlp.zip'), fs.readFileSync(path.join(bundled, 'version.txt'), 'utf8'));
-    } catch {}
-  }
-
-  const installed = installedVersion();
-  let latest;
   try {
-    const res = await fetch(`${releases}/latest`, { redirect: 'manual' });
-    latest = res.headers.get('location')?.split('/').pop();
+    await extract(path.join(bundled, 'yt-dlp.zip'));
+    swap(fs.readFileSync(path.join(bundled, 'version.txt'), 'utf8'));
+    return;
   } catch {}
-  if (installed != null && (!latest || installed === latest)) return;
 
-  const zip = path.join(binDir, 'yt-dlp.zip');
+  // 넣어 둔 것이 없으면(개발 모드 등) 받아야 쓸 수 있다
+  const latest = await latestVersion();
+  await downloadLatest();
+  swap(latest);
+}
+
+// 새 버전을 뒤에서 받아 두었다가, 진행 중인 다운로드가 없을 때 교체한다
+// (YouTube 변경에 대응하려면 최신 유지가 중요. 실행 중인 yt-dlp 파일은 바꿀 수 없다)
+let pendingVersion = null;
+
+function applyPending() {
+  if (pendingVersion == null || jobs.size) return;
+  try { swap(pendingVersion); } catch {}
+  pendingVersion = null;
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+}
+
+async function updateYtdlp() {
+  const latest = await latestVersion();
+  if (!latest || latest === installedVersion()) return;
   try {
-    const res = await fetch(zipUrl);
-    if (!res.ok) throw new Error(`yt-dlp 다운로드 실패: ${res.status}`);
-    fs.writeFileSync(zip, Buffer.from(await res.arrayBuffer()));
-    await install(zip, latest);
-  } catch (e) {
-    if (installed == null) throw e; // 업데이트만 실패한 거면 기존 버전으로 계속 쓴다
-  } finally {
-    fs.rmSync(zip, { force: true });
+    await downloadLatest();
+    pendingVersion = latest;
+    applyPending();
+  } catch {
+    fs.rmSync(tmpDir, { recursive: true, force: true }); // 실패하면 기존 버전으로 계속 쓴다
   }
 }
 
@@ -158,6 +195,7 @@ ipcMain.handle('download', async (_e, { id, url, quality, folder, compat, subs }
     throw e;
   } finally {
     jobs.delete(id);
+    applyPending(); // 받아 둔 새 yt-dlp가 있으면 다운로드가 모두 끝났을 때 교체
   }
 });
 
@@ -215,7 +253,10 @@ app.whenReady().then(async () => {
     win.webContents.send('ready');
   } catch (e) {
     dialog.showErrorBox('초기화 실패', e.message);
+    return;
   }
+  updateYtdlp(); // 기다리지 않는다
+
 });
 
 app.on('window-all-closed', () => app.quit());
