@@ -6,6 +6,19 @@ const { spawn } = require('child_process');
 // asar로 패키징되면 ffmpeg 바이너리는 app.asar.unpacked 에 있다
 const ffmpegPath = require('ffmpeg-static').replace('app.asar', 'app.asar.unpacked');
 
+// 예전 이름(yt-downloader) 때의 설정·다운로드 기록을 새 이름 폴더로 옮긴다
+// (Electron이 새 폴더를 먼저 만들어 두므로 폴더째가 아니라 안의 항목을 하나씩 옮긴다)
+const oldData = path.join(app.getPath('appData'), 'yt-downloader');
+const userData = app.getPath('userData');
+if (fs.existsSync(oldData) && !fs.existsSync(path.join(userData, 'Local Storage'))) {
+  fs.mkdirSync(userData, { recursive: true });
+  for (const name of fs.readdirSync(oldData)) {
+    const to = path.join(userData, name);
+    if (!fs.existsSync(to)) try { fs.renameSync(path.join(oldData, name), to); } catch {}
+  }
+  try { fs.rmdirSync(oldData); } catch {} // 다 옮겨서 비었을 때만 지워진다
+}
+
 const isWin = process.platform === 'win32';
 const binDir = path.join(app.getPath('userData'), 'bin');
 // 단일 exe 버전은 실행할 때마다 내부 파일을 임시 폴더에 풀어서(백신 검사 포함) 시작이 수십 초 걸린다.
@@ -236,7 +249,7 @@ app.on('web-contents-created', (_e, contents) => {
 
 app.whenReady().then(async () => {
   // 일부 사이트가 Electron UA를 차단하므로 일반 Chrome UA 사용
-  app.userAgentFallback = app.userAgentFallback.replace(/ (Electron|yt-downloader)\/\S+/g, '');
+  app.userAgentFallback = app.userAgentFallback.replace(/ (Electron|keepframe)\/\S+/gi, '');
   win = new BrowserWindow({
     width: 1400, height: 880,
     webPreferences: { preload: path.join(__dirname, 'preload.js'), webviewTag: true },

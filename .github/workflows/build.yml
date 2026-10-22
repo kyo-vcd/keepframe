@@ -30,7 +30,7 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: false   # 인증서 없이 빌드 (Mac은 ad-hoc 서명)
       - uses: actions/upload-artifact@v4
         with:
-          name: YT-Downloader-${{ matrix.target }}
+          name: Keepframe-${{ matrix.target }}
           path: dist/*.zip   # 압축을 풀고 바로 실행 (설치 불필요)
           if-no-files-found: error
 
