@@ -13,8 +13,12 @@ jobs:
         include:
           - os: windows-latest
             target: win
-          - os: macos-14   # Apple Silicon (arm64). macos-latest는 서버 부족으로 배정이 안 될 때가 많다
+            arch: x64
+          # Apple Silicon(arm64)용 앱을 Intel Mac 서버에서 만든다.
+          # Apple Silicon 서버(macos-latest/14)는 부족해서 배정이 안 되고 취소되는 일이 잦다
+          - os: macos-15-intel
             target: mac
+            arch: arm64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -24,8 +28,10 @@ jobs:
           cache: npm
       # ffmpeg-static은 설치하는 OS용 바이너리를 받으므로 각 OS에서 따로 설치·빌드해야 한다
       - run: npm ci
+        env:
+          npm_config_arch: ${{ matrix.arch }}   # ffmpeg-static이 이 값에 맞는 ffmpeg를 받는다
       # yt-dlp를 미리 받아 함께 넣은 뒤 빌드한다 (scripts/fetch-ytdlp.js)
-      - run: npm run dist:${{ matrix.target }} -- --publish never
+      - run: npm run dist:${{ matrix.target }} -- --${{ matrix.arch }} --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false   # 인증서 없이 빌드 (Mac은 ad-hoc 서명)
       - uses: actions/upload-artifact@v4
