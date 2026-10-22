@@ -176,7 +176,8 @@ ipcMain.handle('download', async (_e, { id, url, quality, folder, compat, subs, 
     '--no-simulate', '--no-quiet',
     '--print', 'before_dl:[title] %(title)s', '--print', 'before_dl:[thumb] %(thumbnail)s',
     '--print', 'after_move:[file] %(filepath)s',
-    '-o', path.join(folder, '%(title)s.%(ext)s')];
+    // 파일 이름 뒤에 실제 해상도를 붙여 화질이 다른 파일끼리 덮어쓰지 않게 한다 (예: 제목 [720p].mp4)
+    '-o', path.join(folder, quality === 'mp3' ? '%(title)s.%(ext)s' : '%(title)s%(height& [{}p]|)s.%(ext)s')];
   if (quality === 'mp3') {
     args.push('-x', '--audio-format', 'mp3');
   } else {

@@ -15,7 +15,9 @@ let folder = '';
 let nextId = 1;
 let running = 0;
 const queue = [];         // 순서를 기다리는 항목
-const active = new Set(); // 대기 중이거나 받는 중인 영상 ID
+const active = new Set(); // 대기 중이거나 받는 중인 '영상 ID|화질'
+// 같은 영상은 한 번에 하나씩 받는다. 요청 화질이 달라도 실제 해상도가 같으면 파일 이름이 겹치기 때문
+const runningVideos = new Set();
 const cards = new Map();  // job id → 카드 DOM
 
 // 설정 저장/복원
@@ -160,8 +162,8 @@ api.onJob(({ id, title, thumb, progress, speed, eta, stage }) => {
 // job: { url, title, thumb, quality, label, folder, compat, subs } — 다시 시도할 때 같은 설정으로 재사용한다
 function start(job) {
   if (!ready) return toast('yt-dlp 준비 중입니다');
-  const vid = videoId(job.url);
-  if (active.has(vid)) return toast('이미 목록에 있는 영상입니다');
+  const vid = `${videoId(job.url)}|${job.quality}`;
+  if (active.has(vid)) return toast('이미 같은 화질로 받고 있는 영상입니다');
   active.add(vid);
   const id = nextId++;
   const el = makeCard(job.title || job.url, job.label, job.thumb);
@@ -169,7 +171,7 @@ function start(job) {
   el.querySelector('.state').textContent = '대기열';
   $('jobs').prepend(el);
   cards.set(id, el);
-  const item = { id, job, el, vid };
+  const item = { id, job, el, vid, video: videoId(job.url) };
   el.querySelector('.x').onclick = () => {
     if (el.classList.contains('queued')) {
       queue.splice(queue.indexOf(item), 1);
@@ -182,7 +184,10 @@ function start(job) {
 }
 
 function pump() {
-  while (running < Number(maxEl.value) && queue.length) run(queue.shift());
+  for (let i = 0; i < queue.length && running < Number(maxEl.value);) {
+    if (runningVideos.has(queue[i].video)) { i++; continue; }
+    run(queue.splice(i, 1)[0]);
+  }
   updateCount();
 }
 
@@ -195,6 +200,7 @@ function finish(item) {
 async function run(item) {
   const { id, job, el } = item;
   running++;
+  runningVideos.add(item.video);
   el.classList.replace('queued', 'running');
   el.querySelector('.state').textContent = '시작 중';
   const titleOf = () => el.querySelector('.title').textContent;
@@ -221,6 +227,7 @@ async function run(item) {
     x.onclick = () => el.remove();
   } finally {
     running--;
+    runningVideos.delete(item.video);
     finish(item);
     pump();
   }
