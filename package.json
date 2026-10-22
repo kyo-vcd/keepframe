@@ -25,15 +25,11 @@
       "node_modules/ffmpeg-static/**"
     ],
     "win": {
-      "target": "nsis",
+      "target": "zip",
       "icon": "build/icon.ico"
     },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true
-    },
     "mac": {
-      "target": "dmg",
+      "target": "zip",
       "category": "public.app-category.video"
     },
     "extraResources": [
