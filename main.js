@@ -91,7 +91,9 @@ const installedVersion = () => (fs.existsSync(ytdlpPath) && fs.existsSync(versio
 // 쓸 수 있는 yt-dlp를 확보한다. 이미 있으면 바로 끝나고, 업데이트는 updateYtdlp()가 뒤에서 한다
 async function ensureYtdlp() {
   fs.mkdirSync(binDir, { recursive: true });
-  fs.rmSync(path.join(binDir, isWin ? 'yt-dlp.exe' : 'yt-dlp'), { force: true }); // 예전 단일 exe 정리
+  // 예전 단일 exe 정리. Mac에서는 이름(yt-dlp)이 지금의 설치 폴더와 같으므로 파일일 때만 지운다
+  const oldExe = path.join(binDir, isWin ? 'yt-dlp.exe' : 'yt-dlp');
+  if (fs.existsSync(oldExe) && fs.statSync(oldExe).isFile()) fs.rmSync(oldExe);
   if (installedVersion() != null) return;
 
   // 설치 파일에 함께 넣어 둔 버전을 설치한다 (첫 실행 때 인터넷 없이도 바로 사용)
