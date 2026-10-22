@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' https:; style-src 'self' 'unsafe-inline'">
+  <title>YT Downloader</title>
+  <style>
+    :root {
+      --bg: #fafafa; --surface: #ffffff; --border: #e7e7ea; --text: #18181b; --muted: #71717a;
+      --chip: #f1f1f3; --chip-on: #18181b; --chip-on-text: #fff;
+      --accent: #ff3b30; --ok: #34c759; --shadow: 0 8px 30px rgba(0,0,0,.12);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0b0b0c; --surface: #18181b; --border: #27272a; --text: #fafafa; --muted: #a1a1aa;
+        --chip: #27272a; --chip-on: #fafafa; --chip-on-text: #18181b; --shadow: 0 8px 30px rgba(0,0,0,.5);
+      }
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      display: flex; flex-direction: column; background: var(--bg); color: var(--text);
+      font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+    }
+    button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; }
+    button:disabled { opacity: .35; cursor: default; }
+    svg.i { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+    /* 상단 바 */
+    .top { display: flex; align-items: center; gap: 4px; padding: 10px 14px; background: var(--surface); border-bottom: 1px solid var(--border); }
+    .icon { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; }
+    .icon:hover:not(:disabled) { background: var(--chip); }
+    .icon svg.i { width: 18px; height: 18px; }
+    #address {
+      flex: 1; max-width: 720px; margin: 0 auto; height: 34px; padding: 0 16px; border-radius: 999px;
+      border: 1px solid transparent; background: var(--chip); color: var(--text); font: inherit; outline: none;
+    }
+    #address:focus { border-color: var(--border); background: var(--surface); }
+
+    .main { flex: 1; display: flex; min-height: 0; }
+    .browser { position: relative; flex: 1; display: flex; }
+    webview { flex: 1; }
+
+    /* 오른쪽 다운로드 패널 */
+    aside {
+      width: 320px; flex: none; display: flex; flex-direction: column; gap: 16px; padding: 16px;
+      background: var(--surface); border-left: 1px solid var(--border); min-height: 0;
+    }
+    .label { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 8px; }
+    .seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 3px; border-radius: 12px; background: var(--chip); }
+    .seg button { padding: 7px 0; border-radius: 9px; color: var(--muted); font-weight: 500; }
+    .seg button.on { background: var(--chip-on); color: var(--chip-on-text); }
+    .folder { display: flex; align-items: center; gap: 8px; }
+    .folder { gap: 6px; }
+    #folderInput, #urlInput { flex: 1; min-width: 0; height: 36px; padding: 0 12px; border-radius: 10px; border: 1px solid transparent; background: var(--chip); color: var(--text); font: inherit; outline: none; }
+    #folderInput:focus, #urlInput:focus { border-color: var(--border); background: var(--surface); }
+    .opt select { font: inherit; color: var(--text); background: var(--chip); border: 0; border-radius: 8px; padding: 4px 8px; }
+    .folder .icon { flex: none; background: var(--chip); border-radius: 10px; width: 36px; height: 36px; }
+    #go { height: 42px; border-radius: 12px; background: var(--accent); color: #fff; font-weight: 600; font-size: 14px; }
+    .opt { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; cursor: pointer; }
+    .opt input { appearance: none; width: 34px; height: 20px; border-radius: 999px; background: var(--border); position: relative; cursor: pointer; transition: background .15s; margin: 0; }
+    .opt input::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .15s; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+    .opt input:checked { background: var(--ok); }
+    .opt input:checked::after { transform: translateX(14px); }
+
+    .list-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0; }
+    .list-head button { font-size: 12px; color: var(--muted); text-transform: none; letter-spacing: 0; font-weight: 500; }
+    .list-head button:hover { color: var(--text); }
+    .divider { height: 1px; background: var(--border); margin: 0 -16px; }
+
+    #jobs { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; margin: -8px -4px 0; padding: 0 4px; }
+    #jobs:empty::before { content: '다운로드한 영상이 여기에 표시됩니다'; color: var(--muted); text-align: center; padding: 32px 0; }
+    .job { padding: 10px 12px; border-radius: 12px; background: var(--bg); border: 1px solid var(--border); }
+    .job { display: flex; gap: 10px; }
+    .job .thumb { width: 64px; height: 36px; flex: none; border-radius: 6px; background: var(--chip) center/cover no-repeat; }
+    .job .body { flex: 1; min-width: 0; }
+    .job .head { display: flex; align-items: center; gap: 8px; }
+    .job .title { flex: 1; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .job.done .title { cursor: pointer; }
+    .job.done .title:hover { text-decoration: underline; }
+    .job.queued .fill { width: 0 !important; }
+    .job .x { width: 22px; height: 22px; border-radius: 50%; color: var(--muted); flex: none; }
+    .job .x:hover { background: var(--chip); }
+    .job .track { height: 4px; margin: 8px 0 6px; border-radius: 2px; background: var(--chip); overflow: hidden; }
+    .job .fill { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+    .job.done .fill { background: var(--ok); }
+    .job.fail .fill { background: var(--muted); }
+    .job .meta { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 12px; }
+    .job .meta button { color: var(--text); text-decoration: underline; font-size: 12px; padding: 0; }
+
+    /* 토스트 */
+    #toast {
+      position: absolute; left: 50%; bottom: 20px; transform: translate(-50%, 8px); opacity: 0; pointer-events: none;
+      padding: 8px 14px; border-radius: 999px; background: var(--chip-on); color: var(--chip-on-text); box-shadow: var(--shadow);
+      transition: opacity .2s, transform .2s; white-space: nowrap;
+    }
+    #toast.show { opacity: 1; transform: translate(-50%, 0); }
+  </style>
+</head>
+<body>
+  <div class="top">
+    <button class="icon" id="back" title="뒤로"><svg class="i" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button>
+    <button class="icon" id="fwd" title="앞으로"><svg class="i" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></button>
+    <button class="icon" id="reload" title="새로고침"><svg class="i" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></button>
+    <input id="address" placeholder="검색하거나 URL 입력" spellcheck="false">
+    <button class="icon" id="home" title="홈"><svg class="i" viewBox="0 0 24 24"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg></button>
+  </div>
+
+  <div class="main">
+    <div class="browser">
+      <webview id="view" src="https://www.youtube.com" allowpopups></webview>
+      <div id="toast"></div>
+    </div>
+
+    <aside>
+      <div>
+        <div class="label">화질</div>
+        <div class="seg" id="quality">
+          <button data-q="best" class="on">최고</button>
+          <button data-q="2160">4K</button>
+          <button data-q="1440">1440p</button>
+          <button data-q="1080">1080p</button>
+          <button data-q="720">720p</button>
+          <button data-q="mp3">MP3</button>
+        </div>
+      </div>
+
+      <div>
+        <div class="label">저장 위치</div>
+        <div class="folder">
+          <input id="folderInput" spellcheck="false" placeholder="저장 경로 입력 후 Enter">
+          <button class="icon" id="pick" title="폴더 선택"><svg class="i" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button>
+          <button class="icon" id="openFolder" title="폴더 열기"><svg class="i" viewBox="0 0 24 24"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></button>
+        </div>
+      </div>
+
+      <button id="go" disabled>준비 중…</button>
+
+      <div>
+        <div class="label">링크로 받기</div>
+        <div class="folder">
+          <input id="urlInput" spellcheck="false" placeholder="공유받은 링크 붙여넣고 Enter">
+          <button class="icon" id="urlGo" title="다운로드"><svg class="i" viewBox="0 0 24 24"><path d="M12 4v12"/><path d="M6 11l6 6 6-6"/><path d="M5 20h14"/></svg></button>
+        </div>
+      </div>
+
+      <div>
+        <div class="label">옵션</div>
+        <label class="opt" title="Windows·Mac 기본 플레이어에서 재생되는 H.264 우선 (최대 1080p)">호환 우선 (H.264) <input type="checkbox" id="optCompat"></label>
+        <label class="opt" title="한국어·영어 자막을 .srt 파일로 함께 저장">자막 같이 받기 <input type="checkbox" id="optSubs"></label>
+        <label class="opt">완료되면 카드 자동 닫기 <input type="checkbox" id="optAutoClose"></label>
+        <label class="opt">완료 알림 <input type="checkbox" id="optNotify" checked></label>
+        <label class="opt">동시 다운로드
+          <select id="optMax"><option>1</option><option>2</option><option selected>3</option><option>5</option></select>
+        </label>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="label list-head">
+        <span id="listTitle">다운로드</span>
+        <button id="clearDone">완료 항목 지우기</button>
+      </div>
+      <div id="jobs"></div>
+    </aside>
+  </div>
+  <script src="renderer.js"></script>
+</body>
+</html>
