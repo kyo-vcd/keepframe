@@ -242,10 +242,21 @@ app.on('web-contents-created', (_e, contents) => {
   });
   // 새 창으로 열리는 링크는 같은 webview에서 연다
   contents.setWindowOpenHandler(({ url }) => {
-    contents.loadURL(url);
+    if (!blockLogin(url)) contents.loadURL(url);
     return { action: 'deny' };
   });
+  // 로그인 없이 쓰는 앱이다. Google은 내장 브라우저에서의 로그인을 막으므로 로그인 버튼을 숨기고 이동도 막는다
+  contents.on('will-navigate', (e, url) => blockLogin(url) && e.preventDefault());
+  contents.on('will-redirect', (e, url) => blockLogin(url) && e.preventDefault());
+  contents.on('dom-ready', () => contents.insertCSS(
+    'a[href*="accounts.google.com"], ytd-button-renderer:has(a[href*="accounts.google.com"]) { display: none !important; }'));
 });
+
+function blockLogin(url) {
+  if (!/^https:\/\/accounts\.google\.com\//.test(url)) return false;
+  win.webContents.send('toast', '로그인 없이 사용하는 앱입니다');
+  return true;
+}
 
 app.whenReady().then(async () => {
   // 일부 사이트가 Electron UA를 차단하므로 일반 Chrome UA 사용

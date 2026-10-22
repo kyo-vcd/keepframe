@@ -228,6 +228,7 @@ function download(url, title) {
 }
 
 api.onDownloadUrl(url => download(url));
+api.onToast(toast);
 
 $('go').onclick = () => download(view.getURL(), view.getTitle().replace(/ - YouTube$/, ''));
 

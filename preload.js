@@ -12,4 +12,5 @@ contextBridge.exposeInMainWorld('api', {
   isReady: () => ipcRenderer.invoke('is-ready'),
   onReady: cb => ipcRenderer.on('ready', cb),
   onDownloadUrl: cb => ipcRenderer.on('download-url', (_e, u) => cb(u)),
+  onToast: cb => ipcRenderer.on('toast', (_e, m) => cb(m)),
 });
