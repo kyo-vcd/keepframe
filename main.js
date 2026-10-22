@@ -252,8 +252,13 @@ app.on('web-contents-created', (_e, contents) => {
   // 로그인 없이 쓰는 앱이다. Google은 내장 브라우저에서의 로그인을 막으므로 로그인 버튼을 숨기고 이동도 막는다
   contents.on('will-navigate', (e, url) => blockLogin(url) && e.preventDefault());
   contents.on('will-redirect', (e, url) => blockLogin(url) && e.preventDefault());
-  contents.on('dom-ready', () => contents.insertCSS(
-    'a[href*="accounts.google.com"], ytd-button-renderer:has(a[href*="accounts.google.com"]) { display: none !important; }'));
+  contents.on('dom-ready', () => {
+    contents.insertCSS(
+      'a[href*="accounts.google.com"], ytd-button-renderer:has(a[href*="accounts.google.com"]) { display: none !important; }');
+    // 마우스가 브라우저 화면에 들어오고 나갈 때 앱 화면에 알린다 (renderer.js에서 포커스를 옮겨 한 번 클릭으로 동작하게)
+    contents.executeJavaScript("for (const t of ['mouseenter', 'mouseleave']) "
+      + "document.documentElement.addEventListener(t, () => console.log('__keepframe_' + t))");
+  });
 });
 
 function blockLogin(url) {

@@ -47,6 +47,13 @@
       background: var(--surface); border-left: 1px solid var(--border); min-height: 0;
     }
     .label { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 8px; }
+    /* 접고 펼 수 있는 패널 영역 */
+    .sec > summary { list-style: none; cursor: pointer; user-select: none; display: flex; align-items: center; justify-content: space-between; }
+    .sec > summary::-webkit-details-marker { display: none; }
+    .sec > summary::after { content: ""; width: 6px; height: 6px; margin-right: 4px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg); transition: transform .15s; }
+    .sec:not([open]) > summary { margin-bottom: 0; }
+    .sec:not([open]) > summary::after { transform: rotate(-45deg); }
+    .sec > summary:hover { color: var(--text); }
     .seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 3px; border-radius: 12px; background: var(--chip); }
     .seg button { padding: 7px 0; border-radius: 9px; color: var(--muted); font-weight: 500; }
     .seg button.on { background: var(--chip-on); color: var(--chip-on-text); }
@@ -113,8 +120,8 @@
     </div>
 
     <aside>
-      <div>
-        <div class="label">화질</div>
+      <details class="sec" data-sec="quality" open>
+        <summary class="label">화질</summary>
         <div class="seg" id="quality">
           <button data-q="best" class="on">최고</button>
           <button data-q="2160">4K</button>
@@ -123,29 +130,29 @@
           <button data-q="720">720p</button>
           <button data-q="mp3">MP3</button>
         </div>
-      </div>
+      </details>
 
-      <div>
-        <div class="label">저장 위치</div>
+      <details class="sec" data-sec="folder" open>
+        <summary class="label">저장 위치</summary>
         <div class="folder">
           <input id="folderInput" spellcheck="false" placeholder="저장 경로 입력 후 Enter">
           <button class="icon" id="pick" title="폴더 선택"><svg class="i" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button>
           <button class="icon" id="openFolder" title="폴더 열기"><svg class="i" viewBox="0 0 24 24"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></button>
         </div>
-      </div>
+      </details>
 
       <button id="go" disabled>준비 중…</button>
 
-      <div>
-        <div class="label">링크로 받기</div>
+      <details class="sec" data-sec="link" open>
+        <summary class="label">링크로 받기</summary>
         <div class="folder">
           <input id="urlInput" spellcheck="false" placeholder="공유받은 링크 붙여넣고 Enter">
           <button class="icon" id="urlGo" title="다운로드"><svg class="i" viewBox="0 0 24 24"><path d="M12 4v12"/><path d="M6 11l6 6 6-6"/><path d="M5 20h14"/></svg></button>
         </div>
-      </div>
+      </details>
 
-      <div>
-        <div class="label">옵션</div>
+      <details class="sec" data-sec="options" open>
+        <summary class="label">옵션</summary>
         <label class="opt" title="Windows·Mac 기본 플레이어에서 재생되는 H.264 우선 (최대 1080p)">호환 우선 (H.264) <input type="checkbox" id="optCompat"></label>
         <label class="opt" title="한국어·영어 자막을 .srt 파일로 함께 저장">자막 같이 받기 <input type="checkbox" id="optSubs"></label>
         <label class="opt">완료되면 카드 자동 닫기 <input type="checkbox" id="optAutoClose"></label>
@@ -153,7 +160,7 @@
         <label class="opt">동시 다운로드
           <select id="optMax"><option>1</option><option>2</option><option selected>3</option><option>5</option></select>
         </label>
-      </div>
+      </details>
 
       <div class="divider"></div>
 

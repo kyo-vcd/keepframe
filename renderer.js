@@ -31,6 +31,13 @@ const maxEl = $('optMax');
 maxEl.value = localStorage.getItem('opt.max') || maxEl.value;
 maxEl.onchange = () => { localStorage.setItem('opt.max', maxEl.value); pump(); };
 
+// 패널 영역 접기/펴기 상태 기억
+for (const d of document.querySelectorAll('details.sec')) {
+  const k = 'sec.' + d.dataset.sec;
+  if (localStorage.getItem(k) === '0') d.open = false;
+  d.ontoggle = () => localStorage.setItem(k, d.open ? '1' : '0');
+}
+
 // 완료 기록 (앱을 다시 켜도 목록 유지)
 const HISTORY_MAX = 200;
 let history = [];
@@ -298,3 +305,10 @@ $('address').onkeydown = e => {
 const onNav = () => { $('address').value = view.getURL(); render(); };
 view.addEventListener('did-navigate', onNav);
 view.addEventListener('did-navigate-in-page', onNav);
+// 포커스가 반대쪽에 있으면 첫 클릭·마우스 올림(:hover, 툴팁)이 먹지 않는다.
+// 마우스가 브라우저 화면에 들어오고 나갈 때(main.js가 심은 신호) 포커스를 옮겨 준다
+view.addEventListener('console-message', e => {
+  if (e.message === '__keepframe_mouseleave') view.blur();
+  // 패널 입력칸에 글을 쓰는 중이면 포커스를 빼앗지 않는다
+  if (e.message === '__keepframe_mouseenter' && !document.activeElement.matches('input, textarea, select')) view.focus();
+});
