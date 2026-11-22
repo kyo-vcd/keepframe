@@ -164,7 +164,7 @@ ipcMain.handle('pick-folder', async () => {
 
 // yt-dlp 로그 → 카드에 보여줄 진행 단계
 const STAGES = [
-  [/^\[youtube\]/, '정보 확인 중'],
+  [/^\[(youtube|Instagram)\]/, '정보 확인 중'],
   [/Sleeping/, 'YouTube 대기 중'],
   [/^\[download\] Destination:/, '다운로드 중'],
   [/has already been downloaded/, '이미 받은 파일'],
@@ -173,13 +173,15 @@ const STAGES = [
 ];
 
 ipcMain.handle('download', async (_e, { id, url, quality, folder, compat, subs, overwrite }) => {
+  // 인스타그램 릴스는 제목이 'Video by 계정명'으로 같아서 계정명_릴스코드로 저장한다
+  const name = /instagram\.com\//.test(url) ? '%(channel)s_%(id)s' : '%(title)s';
   const args = ['--no-playlist', '--newline', '--ffmpeg-location', ffmpegPath,
     // 제목·썸네일·최종 파일 경로를 출력한다. --print는 quiet를 켜므로 --no-quiet로 진행 로그를 다시 켠다
     '--no-simulate', '--no-quiet',
     '--print', 'before_dl:[title] %(title)s', '--print', 'before_dl:[thumb] %(thumbnail)s',
     '--print', 'after_move:[file] %(filepath)s',
     // 파일 이름 뒤에 실제 해상도를 붙여 화질이 다른 파일끼리 덮어쓰지 않게 한다 (예: 제목 [720p].mp4)
-    '-o', path.join(folder, quality === 'mp3' ? '%(title)s.%(ext)s' : '%(title)s%(height& [{}p]|)s.%(ext)s')];
+    '-o', path.join(folder, quality === 'mp3' ? `${name}.%(ext)s` : `${name}%(height& [{}p]|)s.%(ext)s`)];
   if (quality === 'mp3') {
     args.push('-x', '--audio-format', 'mp3');
   } else {

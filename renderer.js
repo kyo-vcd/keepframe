@@ -1,6 +1,7 @@
 const $ = id => document.getElementById(id);
 const view = $('view');
 const isVideo = u => /youtube\.com\/(watch|shorts\/)|youtu\.be\//.test(u);
+const isReel = u => /instagram\.com\/(?:[\w.]+\/)?reels?\/[\w-]+/.test(u); // 링크로 받기에서만 지원
 // 같은 영상이라도 URL(재생목록 파라미터 등)이 다를 수 있어 영상 ID로 중복을 판단한다
 const videoId = u => {
   try {
@@ -256,8 +257,8 @@ $('go').onclick = () => download(view.getURL(), view.getTitle().replace(/ - YouT
 // 공유받은 링크: 여러 개를 한 번에 붙여넣어도 각각 받는다
 function downloadPasted() {
   if (!ready) return toast('yt-dlp 준비 중입니다');
-  const urls = ($('urlInput').value.match(/https?:\/\/\S+/g) || []).filter(isVideo);
-  if (!urls.length) return toast('YouTube 영상 링크를 붙여넣으세요');
+  const urls = ($('urlInput').value.match(/https?:\/\/\S+/g) || []).filter(u => isVideo(u) || isReel(u));
+  if (!urls.length) return toast('YouTube 영상이나 Instagram 릴스 링크를 붙여넣으세요');
   urls.forEach(u => download(u));
   $('urlInput').value = '';
 }
