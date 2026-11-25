@@ -53,6 +53,12 @@ jobs:
         with:
           path: out
           merge-multiple: true
-      - run: gh release create "$GITHUB_REF_NAME" out/*.zip install.sh --title "$GITHUB_REF_NAME" --generate-notes
+      # GitHub 웹에서 Release를 먼저 만들어 태그를 붙인 경우에는 이미 있는 Release에 파일만 올린다
+      - run: |
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" out/*.zip install.sh --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" out/*.zip install.sh --title "$GITHUB_REF_NAME" --generate-notes
+          fi
         env:
           GH_TOKEN: ${{ github.token }}
