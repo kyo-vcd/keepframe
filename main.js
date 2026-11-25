@@ -114,24 +114,54 @@ async function ensureYtdlp() {
 // (YouTube 변경에 대응하려면 최신 유지가 중요. 실행 중인 yt-dlp 파일은 바꿀 수 없다)
 let pendingVersion = null;
 
+// 실패는 연속으로 실패하는 동안 한 번만 알린다 (주기적으로 확인하므로 매번 알리면 성가시다)
+let updateFailed = false;
+function updateFailure(msg) {
+  if (!updateFailed) win?.webContents.send('toast', `yt-dlp 업데이트 실패: ${msg} (지금 버전으로 계속 사용)`);
+  updateFailed = true;
+}
+
 function applyPending() {
   if (pendingVersion == null || jobs.size) return;
-  try { swap(pendingVersion); } catch {}
+  try {
+    swap(pendingVersion);
+    updateFailed = false;
+  } catch (e) {
+    updateFailure(`교체하지 못했습니다 (${e.message})`);
+  }
   pendingVersion = null;
   fs.rmSync(tmpDir, { recursive: true, force: true });
 }
 
+let updating = false;
 async function updateYtdlp() {
-  const latest = await latestVersion();
-  if (!latest || latest === installedVersion()) return;
+  if (updating) return;
+  updating = true;
   try {
-    await downloadLatest();
-    pendingVersion = latest;
-    applyPending();
-  } catch {
-    fs.rmSync(tmpDir, { recursive: true, force: true }); // 실패하면 기존 버전으로 계속 쓴다
+    const latest = await latestVersion();
+    if (!latest) return updateFailure('최신 버전을 확인하지 못했습니다');
+    // 이미 최신이거나, 받아 두고 다운로드가 끝나기를 기다리는 중
+    if (latest === installedVersion() || latest === pendingVersion) {
+      updateFailed = false;
+      return;
+    }
+    try {
+      // 받아 둔 버전이 있어도 더 새 버전으로 덮어 푼다. 푸는 도중에 교체되지 않게 대기 표시를 먼저 지운다
+      pendingVersion = null;
+      await downloadLatest();
+      pendingVersion = latest;
+      applyPending();
+    } catch (e) {
+      fs.rmSync(tmpDir, { recursive: true, force: true }); // 실패하면 기존 버전으로 계속 쓴다
+      updateFailure(e.message);
+    }
+  } finally {
+    updating = false;
   }
 }
+
+// 앱을 오래 켜 두어도 YouTube 변경에 대응하도록 주기적으로 다시 확인한다
+const UPDATE_INTERVAL = 6 * 60 * 60 * 1000; // 6시간
 
 function run(args, onLine, onSpawn) {
   return new Promise((resolve, reject) => {
@@ -293,6 +323,7 @@ app.whenReady().then(async () => {
     return;
   }
   updateYtdlp(); // 기다리지 않는다
+  setInterval(updateYtdlp, UPDATE_INTERVAL);
 
 });
 
