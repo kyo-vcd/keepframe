@@ -85,6 +85,15 @@ async function downloadLatest() {
   }
 }
 
+// yt-dlp 버전(2026.11.23, 2026.11.23.1 형식)을 비교한다
+function newer(a, b) {
+  const pa = a.split('.').map(Number), pb = b.split('.').map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0);
+  }
+  return false;
+}
+
 const installedVersion = () => (fs.existsSync(ytdlpPath) && fs.existsSync(versionFile)
   ? fs.readFileSync(versionFile, 'utf8') : null);
 
@@ -94,15 +103,24 @@ async function ensureYtdlp() {
   // 예전 단일 exe 정리. Mac에서는 이름(yt-dlp)이 지금의 설치 폴더와 같으므로 파일일 때만 지운다
   const oldExe = path.join(binDir, isWin ? 'yt-dlp.exe' : 'yt-dlp');
   if (fs.existsSync(oldExe) && fs.statSync(oldExe).isFile()) fs.rmSync(oldExe);
-  if (installedVersion() != null) return;
+  const installed = installedVersion();
 
-  // 설치 파일에 함께 넣어 둔 버전을 설치한다 (첫 실행 때 인터넷 없이도 바로 사용)
+  // 앱에 함께 넣어 둔 버전을 설치한다 (첫 실행 때 인터넷 없이도 바로 사용).
+  // 앱을 새 버전으로 바꿨을 때 넣어 둔 것이 이미 설치된 것보다 새것이면 그것으로 바꾼다
   const bundled = path.join(process.resourcesPath, 'yt-dlp');
-  try {
-    await extract(path.join(bundled, 'yt-dlp.zip'));
-    swap(fs.readFileSync(path.join(bundled, 'version.txt'), 'utf8'));
-    return;
-  } catch {}
+  let bundledVersion = null;
+  try { bundledVersion = fs.readFileSync(path.join(bundled, 'version.txt'), 'utf8').trim(); } catch {}
+  if (installed != null && !(bundledVersion && newer(bundledVersion, installed))) return;
+  if (bundledVersion) {
+    try {
+      await extract(path.join(bundled, 'yt-dlp.zip'));
+      swap(bundledVersion);
+      return;
+    } catch {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  }
+  if (installed != null) return; // 이미 쓸 수 있는 버전이 있다
 
   // 넣어 둔 것이 없으면(개발 모드 등) 받아야 쓸 수 있다
   const latest = await latestVersion();
@@ -121,43 +139,92 @@ function updateFailure(msg) {
   updateFailed = true;
 }
 
+// 받아 둔 새 버전으로 교체한다. 다운로드 중이면 다 끝난 뒤(다운로드 완료 때 다시 불린다)
 function applyPending() {
-  if (pendingVersion == null || jobs.size) return;
+  if (pendingVersion == null || jobs.size) return false;
   try {
     swap(pendingVersion);
     updateFailed = false;
+    return true;
   } catch (e) {
-    updateFailure(`교체하지 못했습니다 (${e.message})`);
+    throw new Error(`교체하지 못했습니다 (${e.message})`);
+  } finally {
+    pendingVersion = null;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   }
-  pendingVersion = null;
-  fs.rmSync(tmpDir, { recursive: true, force: true });
+}
+function applyPendingQuietly() {
+  try { applyPending(); } catch (e) { updateFailure(e.message); }
 }
 
-let updating = false;
-async function updateYtdlp() {
-  if (updating) return;
-  updating = true;
-  try {
-    const latest = await latestVersion();
-    if (!latest) return updateFailure('최신 버전을 확인하지 못했습니다');
-    // 이미 최신이거나, 받아 두고 다운로드가 끝나기를 기다리는 중
-    if (latest === installedVersion() || latest === pendingVersion) {
-      updateFailed = false;
-      return;
-    }
+// 최신 버전을 확인해 받는다. 결과: 'latest'(이미 최신) | 'updated'(교체함) | 'pending'(다운로드가 끝나면 교체)
+// 실패하면 예외를 던지고, 기존 버전으로 계속 쓴다
+async function checkUpdate() {
+  const latest = await latestVersion();
+  if (!latest) throw new Error('최신 버전을 확인하지 못했습니다');
+  if (latest === installedVersion()) return { status: 'latest', version: latest };
+  if (latest !== pendingVersion) {
     try {
       // 받아 둔 버전이 있어도 더 새 버전으로 덮어 푼다. 푸는 도중에 교체되지 않게 대기 표시를 먼저 지운다
       pendingVersion = null;
       await downloadLatest();
       pendingVersion = latest;
-      applyPending();
     } catch (e) {
-      fs.rmSync(tmpDir, { recursive: true, force: true }); // 실패하면 기존 버전으로 계속 쓴다
-      updateFailure(e.message);
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+      throw e;
     }
-  } finally {
-    updating = false;
   }
+  return { status: applyPending() ? 'updated' : 'pending', version: latest };
+}
+
+// 확인이 겹치지 않게, 진행 중이면 같은 결과를 기다린다
+let updating = null;
+function runUpdate() {
+  updating ||= checkUpdate().finally(() => (updating = null));
+  return updating;
+}
+
+// 자동 확인: 조용히 하고 실패만 알린다
+async function updateYtdlp() {
+  try {
+    await runUpdate();
+    updateFailed = false;
+  } catch (e) {
+    updateFailure(e.message);
+  }
+}
+
+// 메뉴에서 직접 확인: 결과를 항상 대화상자로 보여 준다
+async function updateYtdlpManually() {
+  if (!ytdlpReady) return dialog.showMessageBox(win, { message: 'yt-dlp 준비 중입니다' });
+  let message, type = 'info';
+  try {
+    const { status, version } = await runUpdate();
+    updateFailed = false;
+    message = {
+      latest: `최신 버전입니다 (${version})`,
+      updated: `${version}(으)로 업데이트했습니다`,
+      pending: `${version}을(를) 받아 두었습니다. 진행 중인 다운로드가 끝나면 바뀝니다`,
+    }[status];
+  } catch (e) {
+    type = 'warning';
+    message = `업데이트 실패: ${e.message}\n지금 버전(${installedVersion() || '알 수 없음'})으로 계속 사용합니다`;
+  }
+  dialog.showMessageBox(win, { type, title: 'yt-dlp 업데이트', message });
+}
+
+function setMenu() {
+  const isMac = process.platform === 'darwin';
+  const update = { label: 'yt-dlp 업데이트 확인', click: updateYtdlpManually };
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    ...(isMac ? [{ role: 'appMenu', submenu: [
+      { role: 'about' }, { type: 'separator' }, update, { type: 'separator' },
+      { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' },
+    ] }] : [{ label: '파일', submenu: [update, { type: 'separator' }, { role: 'quit', label: '끝내기' }] }]),
+    { role: 'editMenu' }, // 복사·붙여넣기 단축키(특히 Mac)가 이 메뉴로 동작한다
+    { role: 'viewMenu' },
+    { role: 'windowMenu' },
+  ]));
 }
 
 // 앱을 오래 켜 두어도 YouTube 변경에 대응하도록 주기적으로 다시 확인한다
@@ -246,7 +313,7 @@ ipcMain.handle('download', async (_e, { id, url, quality, folder, compat, subs, 
     throw e;
   } finally {
     jobs.delete(id);
-    applyPending(); // 받아 둔 새 yt-dlp가 있으면 다운로드가 모두 끝났을 때 교체
+    applyPendingQuietly(); // 받아 둔 새 yt-dlp가 있으면 다운로드가 모두 끝났을 때 교체
   }
 });
 
@@ -308,6 +375,9 @@ app.whenReady().then(async () => {
     width: 1400, height: 880,
     webPreferences: { preload: path.join(__dirname, 'preload.js'), webviewTag: true },
   });
+  setMenu();
+  // Windows에서는 메뉴 막대를 숨겨 두고 Alt 키를 누르면 보이게 한다
+  win.setAutoHideMenuBar(true);
   win.setMenuBarVisibility(false);
   // 메인 창은 로컬 UI만 띄운다. 링크·파일을 끌어다 놓아 외부 페이지로 이동하면 preload API가 노출되므로 막는다
   win.webContents.on('will-navigate', e => e.preventDefault());
